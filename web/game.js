@@ -76,10 +76,18 @@
   let started = false, paused = true;
   const overlay = el("overlay");
   function openSettings() { paused = true; overlay.classList.remove("hidden"); el("start").textContent = started ? "New match" : "Play"; }
+  async function goFullscreenLandscape() {
+    // phones: fill the screen and ask for landscape (Android Chrome honours it; iOS ignores, we show the rotate hint)
+    if (!isTouchDevice()) return;
+    try { if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch {}
+    try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock("landscape"); } catch {}
+    setTimeout(fitCanvas, 300); setTimeout(fitCanvas, 1000);
+  }
   el("start").onclick = async () => {
     try { await newMatch(); }
     catch (e) { alert(`Could not start: ${e.message}`); return; }
     started = true; paused = false; overlay.classList.add("hidden"); el("start").blur();
+    goFullscreenLandscape();
   };
   el("settings").onclick = openSettings;
 
@@ -89,8 +97,10 @@
   const ctx = cv.getContext("2d");
   const isTouchDevice = () => matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
   function fitCanvas() {
-    const avail = window.innerHeight - (isTouchDevice() ? 44 : 140);
-    const cssW = Math.min(window.innerWidth * (isTouchDevice() ? 1.0 : 0.96), 1500, Math.max(isTouchDevice() ? 320 : 900, avail * W / H));
+    const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || Infinity, window.visualViewport ? window.visualViewport.width : Infinity);
+    const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const avail = vh - (isTouchDevice() ? 44 : 140);
+    const cssW = Math.min(vw * (isTouchDevice() ? 1.0 : 0.96), 1500, Math.max(isTouchDevice() ? 300 : 900, avail * W / H), vw);
     const scale = cssW / W, dpr = window.devicePixelRatio || 1;
     cv.width = Math.round(W * scale * dpr); cv.height = Math.round(H * scale * dpr);
     document.documentElement.style.setProperty("--w", `${Math.round(cssW)}px`);
@@ -98,6 +108,8 @@
   }
   fitCanvas();
   addEventListener("resize", fitCanvas);
+  addEventListener("orientationchange", () => { setTimeout(fitCanvas, 200); setTimeout(fitCanvas, 800); });
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", fitCanvas);
   const px = (x, y) => [x + cfg.half_w + MARGIN, y + cfg.half_h + MARGIN];
   const COL = { canvas: "#1c2d2b", grass: "#718c5a", line: "#c7e6bd", red: "#e56e56", blue: "#5689e5", ball: cfg.ball_color || "#ff1493", postRed: "#ffcccc", postBlue: "#ccccff", net: "#cdcdcd" };
   function circle(x, y, r, fill, stroke, lw) { const [X, Y] = px(x, y); ctx.beginPath(); ctx.arc(X, Y, r, 0, Math.PI * 2); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.lineWidth = lw || 2; ctx.strokeStyle = stroke; ctx.stroke(); } }
