@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>HaxDrill</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23ff1493' stroke='%23000' stroke-width='3'/%3E%3C/svg%3E">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #1c2d2b; color: #dfe8df; font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; }
+  #bar { width: var(--w, 900px); max-width: 100vw; box-sizing: border-box; height: 40px; font-size: 18px; background: #1f282c; display: flex; align-items: center; gap: 10px; padding: 0 12px; font-weight: 600; }
+  .sq { width: 18px; height: 18px; display: inline-block; border-radius: 3px; }
+  #red { background: #e56e56; } #blue { background: #5689e5; }
+  #time { margin-left: auto; margin-right: auto; font-variant-numeric: tabular-nums; }
+  #label { color: #aabfa9; font-weight: 400; font-size: 14px; }
+  #wrap { position: relative; }
+  canvas { display: block; width: var(--w, 900px); max-width: 100vw; height: auto; touch-action: none; }
+  #goal { position: absolute; left: 0; right: 0; top: 35%; text-align: center; font-size: clamp(32px, 4.5vw, 64px); font-weight: 700; color: #fff; text-shadow: 0 2px 8px #000; pointer-events: none; }
+  #ctl { width: var(--w, 900px); max-width: 100vw; box-sizing: border-box; padding: 8px 12px; font-size: 13px; color: #aabfa9; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  input, select { background: #2c3b3a; color: #dfe8df; border: 1px solid #44615c; border-radius: 4px; padding: 4px 6px; font-size: 14px; }
+  input[type=number] { width: 4em; } #nick { width: 9em; }
+  button { background: #3b5a52; color: #fff; border: 1px solid #5b8a7e; border-radius: 4px; padding: 5px 14px; cursor: pointer; font-weight: 600; }
+  button.secondary { background: #2c3b3a; font-weight: 400; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  /* start screen */
+  #overlay { position: fixed; inset: 0; background: rgba(12, 20, 19, .88); display: flex; align-items: center; justify-content: center; z-index: 10; }
+  #overlay.hidden { display: none; }
+  #setup { background: #1f282c; border: 1px solid #2f3f3c; border-radius: 10px; padding: 22px 26px; width: min(92vw, 520px); display: flex; flex-direction: column; gap: 14px; }
+  #setup h1 { margin: 0; font-size: 26px; } #setup .sub { margin: -8px 0 4px; color: #aabfa9; font-size: 14px; }
+  #setup .row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; } #setup label { display: flex; gap: 6px; align-items: center; color: #aabfa9; font-size: 14px; }
+  #setup .lab { color: #aabfa9; font-size: 14px; min-width: 3.5em; }
+  .seg { display: inline-flex; border: 1px solid #44615c; border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: #2c3b3a; font-weight: 500; padding: 6px 14px; }
+  .seg button + button { border-left: 1px solid #44615c; } .seg button.on { background: #3b5a52; color: #fff; font-weight: 700; }
+  .seg button small { font-size: 10px; opacity: .8; margin-left: 4px; }
+  #start.big { font-size: 18px; padding: 10px; margin-top: 4px; }
+  #setup .hint { margin: 0; font-size: 12px; color: #8ea48c; }
+  /* touch controls (shown on coarse pointers): joystick on the left half, kick on the right half */
+  #touch { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #touch[hidden] { display: none; }
+  #stick { position: absolute; width: 110px; height: 110px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); background: rgba(0,0,0,.18); display: none; }
+  #knob { position: absolute; left: 35px; top: 35px; width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.55); }
+  #kickbtn { position: absolute; right: 4%; bottom: 8%; width: 84px; height: 84px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); background: rgba(255,20,147,.35); color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 15px; pointer-events: none; }
+  #kickbtn.on { background: rgba(255,20,147,.75); }
+  #rotate { width: var(--w, 900px); max-width: 100vw; box-sizing: border-box; padding: 6px 12px; font-size: 13px; color: #aabfa9; text-align: center; }
+  #rotate[hidden] { display: none; }
+  @media (pointer: coarse) { #ctl { display: none; } .hint { display: none; } #bar { height: 40px; } body { overscroll-behavior: none; } }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <div id="setup">
+    <h1>HaxDrill</h1>
+    <p class="sub">HaxBall-style 1v1 against a bot trained by self-play league RL</p>
+    <div class="row"><label>Nickname <input id="nick" maxlength="16" placeholder="player"></label>
+      <label>Number <input id="jersey" maxlength="2" placeholder="7" style="width:2.5em;text-align:center"></label></div>
+    <div class="row"><span class="lab">Difficulty</span>
+      <div class="seg" id="levelseg">
+        <button type="button" data-level="easy" class="on">easy</button>
+        <button type="button" data-level="medium">medium</button>
+        <button type="button" data-level="hard" disabled title="still training">hard <small>soon</small></button>
+      </div>
+      <select id="level" hidden><option value="easy">easy</option><option value="medium">medium</option><option value="hard">hard</option></select>
+    </div>
+    <select id="players" hidden><option value="1" selected>1 vs 1</option></select>
+    <div class="row"><label>Goals to win <input type="number" id="goals" min="0" max="20" value="3"></label>
+      <label>Time limit (min) <input type="number" id="mins" min="0" max="30" step="0.5" value="3"></label></div>
+    <button id="start" class="big">Play</button>
+    <p class="hint">Arrow keys / WASD to move · X or Space to kick · R reset kick-off · Esc settings</p>
+  </div>
+</div>
+<div id="bar"><span class="sq" id="red"></span><span id="sr">0</span><span class="sq" id="blue"></span><span id="sb">0</span><span id="time">00:00</span><span id="label">loading...</span><button id="settings" class="secondary" title="Settings (Esc)">⚙</button></div>
+<div id="wrap"><canvas id="c" width="900" height="460"></canvas><div id="goal"></div><div id="touch" hidden>
+  <div id="stick"><div id="knob"></div></div>
+  <div id="kickbtn">KICK</div>
+</div></div>
+<div id="rotate" hidden>Rotate your phone to landscape for a bigger pitch</div>
+<div id="ctl">
+  <span id="logstat"></span>
+  <button class="secondary" id="dl">Download my play log</button>
+  <span style="opacity:.7">Logs contain player/ball positions, key presses, your nickname and an anonymous id. They are used to train the bots.</span>
+</div>
+
+<script src="physics.js"></script>
+<script src="config.js"></script>
+<script src="policy_n1.js"></script>
+<script src="policy_n1_medium.js" onerror="this.remove()"></script>
+<script src="game.js"></script>
+</body>
+</html>
