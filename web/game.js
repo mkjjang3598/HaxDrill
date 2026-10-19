@@ -5,6 +5,14 @@
   const qs = new URLSearchParams(location.search);
   const LOG_URL = window.HAXDRILL_LOG_URL || qs.get("log") || "/log";
   const el = id => document.getElementById(id);
+  const isTouchDevice = () => (window.matchMedia && matchMedia("(pointer: coarse)").matches) || navigator.maxTouchPoints > 0;
+  window.addEventListener("error", e => { try { el("label").textContent = "error: " + (e.message || e.error); } catch (_) {} });
+  window.addEventListener("unhandledrejection", e => { try { el("label").textContent = "error: " + (e.reason && e.reason.message || e.reason); } catch (_) {} });
+  // state that handlers reference (declared first so a failure further down can never leave it uninitialised)
+  let log = { obs: [], act: [], ep: [], goal: [] }, epId = 0, sent = 0, pending = [];
+  let pol = null, sim = null, n = 1, P = 2, REPEAT = 2, names = [], jerseys = [];
+  const score = [0, 0]; let ticks = 0, pause = 0, lastActs = null, overtime = false, matchOver = false, nextKickoff = 0;
+  const keys = new Set();
   const fail = msg => { el("label").textContent = msg; const sub = document.querySelector("#setup .sub"); if (sub) { sub.textContent = msg; sub.style.color = "#ff9c8a"; } el("start").disabled = true; };
   const FILES = (window.HAXDRILL && window.HAXDRILL.files) || {};
   const cfg = FILES["config.json"];
@@ -14,7 +22,7 @@
   const stored = (() => { try { return JSON.parse(localStorage.getItem("hw_settings") || "{}"); } catch { return {}; } })();
   el("nick").value = qs.get("nick") ?? stored.nick ?? "";
   el("jersey").value = qs.get("jersey") ?? stored.jersey ?? "";
-  el("jersey").addEventListener("input", () => { el("jersey").value = el("jersey").value.replace(/[^\p{L}\p{N}]/gu, "").slice(0, 2); });
+  el("jersey").addEventListener("input", () => { el("jersey").value = el("jersey").value.replace(/[^0-9A-Za-z\u00C0-\uFFFF]/g, "").slice(0, 2); });
   el("players").value = "1";  // public build: 1v1 only (team-play bots are not ready); the engine still supports n>1
   el("level").value = qs.get("level") ?? stored.level ?? "easy";
   el("goals").value = qs.get("goals") ?? stored.goals ?? "3";
@@ -26,8 +34,6 @@
   const timeLimitTicks = () => Math.round((parseFloat(el("mins").value) || 0) * 60 * 60);
 
   // ---------------- match state ----------------
-  let pol = null, sim = null, n = 1, P = 2, REPEAT = 2, names = [], jerseys = [];
-  const score = [0, 0]; let ticks = 0, pause = 0, lastActs = null, overtime = false, matchOver = false, nextKickoff = 0;
   const policyCache = {};
   async function loadPolicy(k, level) {
     const key = `${k}:${level}`;
@@ -80,7 +86,11 @@
     try { await newMatch(); }
     catch (e) { alert(`Could not start: ${e.message}`); return; }
     started = true; paused = false; overlay.classList.add("hidden"); el("start").blur();
-    if (isTouchDevice()) { const h = el("touchhint"); h.classList.remove("fade"); setTimeout(() => h.classList.add("fade"), 3500); }
+    if (isTouchDevice()) {
+      touchHintUntil = performance.now() + 4000;  // shown in the top bar, never over the pitch
+      // maximise: go fullscreen (hides the browser chrome). No orientation lock - rotating keeps working.
+      try { const de = document.documentElement; if (!document.fullscreenElement && de.requestFullscreen) de.requestFullscreen({ navigationUI: "hide" }).catch(() => {}); } catch (_) {}
+    }
   };
   el("settings").onclick = openSettings;
 
@@ -88,12 +98,11 @@
   const MARGIN = 30, W = 2 * cfg.half_w + 2 * MARGIN, H = 2 * cfg.half_h + 2 * MARGIN;
   const cv = el("c");
   const ctx = cv.getContext("2d");
-  const isTouchDevice = () => matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
   let lastCss = 0;
   function fitCanvas() {
     let cssW;
     if (isTouchDevice()) {
-      cssW = cv.getBoundingClientRect().width || Math.min(window.innerWidth, (window.innerHeight - 44) * W / H);
+      cssW = cv.offsetWidth || Math.min(document.documentElement.clientWidth, (document.documentElement.clientHeight - 36) * W / H);
     } else {
       const avail = window.innerHeight - 140;
       cssW = Math.min(window.innerWidth * 0.96, 1500, Math.max(900, avail * W / H));
@@ -144,9 +153,8 @@
   }
 
   // ---------------- input ----------------
-  const keys = new Set();
   const KEYMAP = { ArrowLeft: "L", KeyA: "L", ArrowRight: "R", KeyD: "R", ArrowUp: "U", KeyW: "U", ArrowDown: "D", KeyS: "D", KeyX: "K", Space: "K" };
-  const typing = () => ["INPUT", "SELECT"].includes(document.activeElement?.tagName);
+  const typing = () => { const a = document.activeElement; return !!a && (a.tagName === "INPUT" || a.tagName === "SELECT"); };
   addEventListener("keydown", e => {
     if (e.code === "Escape" && started) { if (paused) { paused = false; overlay.classList.add("hidden"); } else openSettings(); return; }
     if (typing() || paused) return;
@@ -154,47 +162,55 @@
     if (e.code === "KeyR") resetEpisode(0);
   });
   addEventListener("keyup", e => { if (KEYMAP[e.code]) keys.delete(KEYMAP[e.code]); });
-  // ---- touch controls: left half = diamond D-pad (8 directions by sector), right half = kick (hold) ----
-  const touchLayer = el("touch"), dpad = el("dpad"), kickBtn = el("kickbtn");
-  const arrows = Object.fromEntries([...dpad.querySelectorAll(".arrow")].map(a => [a.dataset.d, a]));
-  const isTouch = matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
-  if (isTouch) touchLayer.hidden = false;
-  let padId = null, kickId = null;
+  // ---- touch controls: fixed round joystick left of the pitch + KICK right of it. Any touch on the
+  // left half of the play area moves the knob relative to the stick's centre (8 directions). ----
+  const wrap = el("wrap"), stick = el("stick"), knob = el("knob"), kickBtn = el("kickbtn");
+  const isTouch = isTouchDevice();
+  if (isTouch) document.body.classList.add("touch");
+  let padId = null, kickId = null, touchHintUntil = 0;
   function setDir(dx, dy) {
     keys.delete("L"); keys.delete("R"); keys.delete("U"); keys.delete("D");
     if (dx < 0) keys.add("L"); if (dx > 0) keys.add("R"); if (dy < 0) keys.add("U"); if (dy > 0) keys.add("D");
-    for (const [d, a] of Object.entries(arrows)) a.classList.toggle("on", keys.has(d));
   }
-  function padFromPoint(clientX, clientY) {
-    // direction = sector of the vector from the D-pad centre to the finger (works for taps on arrows and for sliding)
-    const r = dpad.getBoundingClientRect();
-    const vx = clientX - (r.left + r.width / 2), vy = clientY - (r.top + r.height / 2);
+  function stickFromPoint(clientX, clientY) {
+    const r = stick.getBoundingClientRect();
+    const R = r.width / 2 - 6;
+    let vx = clientX - (r.left + r.width / 2), vy = clientY - (r.top + r.height / 2);
     const L = Math.hypot(vx, vy);
-    if (L < r.width * 0.08) { setDir(0, 0); return; }
+    if (L > R) { vx *= R / L; vy *= R / L; }
+    knob.style.transform = `translate(${vx}px, ${vy}px)`;
+    if (L < R * 0.22) { setDir(0, 0); return; }
     const sector = Math.round(Math.atan2(vy, vx) / (Math.PI / 4));
     const dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
-    const [dx, dy] = dirs[((sector % 8) + 8) % 8];
-    setDir(dx, dy);
+    const d = dirs[((sector % 8) + 8) % 8];
+    setDir(d[0], d[1]);
   }
-  touchLayer.addEventListener("pointerdown", e => {
+  function stickRelease() { knob.style.transform = ""; stick.classList.remove("active"); setDir(0, 0); }
+  wrap.addEventListener("pointerdown", e => {
+    if (!isTouch || e.pointerType === "mouse") return;
     e.preventDefault();
-    const rect = touchLayer.getBoundingClientRect();
+    const rect = wrap.getBoundingClientRect();
     if (e.clientX - rect.left < rect.width / 2) {
       if (padId !== null) return;
-      padId = e.pointerId; padFromPoint(e.clientX, e.clientY);
+      padId = e.pointerId; stick.classList.add("active"); stickFromPoint(e.clientX, e.clientY);
     } else {
       if (kickId !== null) return;
       kickId = e.pointerId; keys.add("K"); kickBtn.classList.add("on");
     }
-    try { touchLayer.setPointerCapture(e.pointerId); } catch {}
+    try { wrap.setPointerCapture(e.pointerId); } catch (_) {}
   });
-  touchLayer.addEventListener("pointermove", e => { if (e.pointerId === padId) padFromPoint(e.clientX, e.clientY); });
-  for (const ev of ["pointerup", "pointercancel"]) touchLayer.addEventListener(ev, e => {
-    if (e.pointerId === padId) { padId = null; setDir(0, 0); }
+  wrap.addEventListener("pointermove", e => { if (e.pointerId === padId) stickFromPoint(e.clientX, e.clientY); });
+  ["pointerup", "pointercancel"].forEach(ev => wrap.addEventListener(ev, e => {
+    if (e.pointerId === padId) { padId = null; stickRelease(); }
     if (e.pointerId === kickId) { kickId = null; keys.delete("K"); kickBtn.classList.remove("on"); }
-  });
+  }));
+  document.addEventListener("visibilitychange", () => { if (document.hidden) { padId = kickId = null; stickRelease(); keys.delete("K"); kickBtn.classList.remove("on"); } });
   const rotateHint = el("rotate");
-  const checkOrientation = () => { rotateHint.hidden = !(isTouch && window.innerHeight > window.innerWidth); };
+  const checkOrientation = () => {
+    const portrait = window.innerHeight > window.innerWidth;
+    document.body.classList.toggle("portrait", isTouch && portrait);
+    rotateHint.hidden = !(isTouch && portrait);
+  };
   checkOrientation(); addEventListener("resize", checkOrientation);
   let kickArmedLatch = true;  // HaxBall semantics: release to kick again
   function humanAction() {
@@ -207,7 +223,6 @@
 
   // ---------------- logging ----------------
   const client = (() => { try { let c = localStorage.getItem("hw_client"); if (!c) { c = Math.random().toString(36).slice(2, 10); localStorage.setItem("hw_client", c); } return c; } catch { return "anon"; } })();
-  let log = { obs: [], act: [], ep: [], goal: [] }, epId = 0, sent = 0, pending = [];
   const logstat = el("logstat");
   const payloadOf = l => ({ n, stadium: cfg.stadium, client, name: names[0] || "", obs: l.obs, act: l.act, ep: l.ep, goal: l.goal });
   async function flushLog() {
@@ -274,7 +289,7 @@
     el("time").textContent = overtime ? `${fmt(s)}  OVERTIME` : tl ? `${fmt(s)} / ${fmt(tl)}` : fmt(s);
     const lvl = pol._file && pol._file.includes("_medium.") ? "medium" : "easy";
     const base = `${n}v${n} · ${names[0]} vs bot [${lvl}]`;
-    el("label").textContent = sim.kickoffTeam >= 0 ? `${sim.kickoffTeam === 0 ? "Red" : "Blue"} kick-off · ${base}` : base;
+    el("label").textContent = performance.now() < touchHintUntil ? "stick: move · KICK: hold" : (sim.kickoffTeam >= 0 ? `${sim.kickoffTeam === 0 ? "Red" : "Blue"} kick-off · ${base}` : base);
     draw(kicking);
   }
   let acc = 0, last = performance.now();
