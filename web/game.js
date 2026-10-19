@@ -185,6 +185,22 @@
     const d = dirs[((sector % 8) + 8) % 8];
     setDir(d[0], d[1]);
   }
+  function placeTouchControls() {
+    // centre of each control = midpoint between the lower goal post (that side) and the screen's bottom corner
+    if (!isTouch) return;
+    const wr = wrap.getBoundingClientRect(), c = cv.getBoundingClientRect();
+    const scale = c.width / W;
+    const postY = c.top - wr.top + (cfg.goal_half + cfg.half_h + MARGIN) * scale;            // lower posts (y = +64)
+    const postL = c.left - wr.left + (-cfg.goal_x + cfg.half_w + MARGIN) * scale;            // left post x
+    const postR = c.left - wr.left + (cfg.goal_x + cfg.half_w + MARGIN) * scale;             // right post x
+    const bottom = window.innerHeight - wr.top;                                              // screen bottom in wrap coords
+    const cy = Math.min((postY + bottom) / 2, bottom - 50);
+    // keep the controls fully on screen (portrait: the posts sit near the screen edge, so the midpoint would be cut off)
+    const rs = stick.getBoundingClientRect().width / 2 + 8, rk = kickBtn.getBoundingClientRect().width / 2 + 8;
+    const sx = Math.max(postL / 2, rs), kx = Math.min((postR + wr.width) / 2, wr.width - rk);
+    stick.style.left = `${sx}px`; stick.style.top = `${cy}px`;
+    kickBtn.style.left = `${kx}px`; kickBtn.style.top = `${cy}px`;
+  }
   function stickRelease() { knob.style.transform = ""; stick.classList.remove("active"); setDir(0, 0); }
   wrap.addEventListener("pointerdown", e => {
     if (!isTouch || e.pointerType === "mouse") return;
@@ -294,7 +310,7 @@
   }
   let acc = 0, last = performance.now();
   function frame(now) {
-    fitCanvas();
+    fitCanvas(); placeTouchControls();
     acc += Math.min(100, now - last); last = now;
     while (acc >= 1000 / 60) { tick(); acc -= 1000 / 60; }
     requestAnimationFrame(frame);
