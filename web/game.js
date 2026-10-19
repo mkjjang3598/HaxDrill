@@ -102,7 +102,16 @@
   function fitCanvas() {
     let cssW;
     if (isTouchDevice()) {
-      cssW = cv.offsetWidth || Math.min(document.documentElement.clientWidth, (document.documentElement.clientHeight - 36) * W / H);
+      // size from the *visible* viewport (browser toolbars, notches) so nothing is cut off at the bottom
+      const vv = window.visualViewport;
+      const vw = Math.round(vv ? vv.width : window.innerWidth), vh = Math.round(vv ? vv.height : window.innerHeight);
+      const portrait = vh > vw;
+      const gut = portrait ? 0 : (vw < 600 ? 92 : 100);
+      const barH = el("bar").getBoundingClientRect().height || 32;
+      const reserve = portrait ? 150 : 0;  // portrait: controls live below the pitch
+      cssW = Math.max(200, Math.min(vw - 2 * gut, (vh - barH - 10 - reserve) * W / H));
+      document.documentElement.style.setProperty("--w", `${Math.round(cssW)}px`);
+      document.documentElement.style.setProperty("--vh", `${vh}px`);
     } else {
       const avail = window.innerHeight - 140;
       cssW = Math.min(window.innerWidth * 0.96, 1500, Math.max(900, avail * W / H));
@@ -188,18 +197,22 @@
   function placeTouchControls() {
     // centre of each control = midpoint between the lower goal post (that side) and the screen's bottom corner
     if (!isTouch) return;
+    try { placeTouchControlsInner(); } catch (e) { el("label").textContent = "layout error: " + e.message; }
+  }
+  function placeTouchControlsInner() {
     const wr = wrap.getBoundingClientRect(), c = cv.getBoundingClientRect();
     const scale = c.width / W;
     const postY = c.top - wr.top + (cfg.goal_half + cfg.half_h + MARGIN) * scale;            // lower posts (y = +64)
     const postL = c.left - wr.left + (-cfg.goal_x + cfg.half_w + MARGIN) * scale;            // left post x
     const postR = c.left - wr.left + (cfg.goal_x + cfg.half_w + MARGIN) * scale;             // right post x
-    const bottom = window.innerHeight - wr.top;                                              // screen bottom in wrap coords
-    const cy = Math.min((postY + bottom) / 2, bottom - 50);
+    const vv = window.visualViewport;
+    const bottom = (vv ? vv.height : window.innerHeight) - wr.top - 6;                       // visible bottom in wrap coords
+    const cy = Math.min(postY + 0.42 * (bottom - postY), bottom - 50);  // a little above the exact midpoint
     // keep the controls fully on screen (portrait: the posts sit near the screen edge, so the midpoint would be cut off)
     const rs = stick.getBoundingClientRect().width / 2 + 8, rk = kickBtn.getBoundingClientRect().width / 2 + 8;
     const sx = Math.max(postL / 2, rs), kx = Math.min((postR + wr.width) / 2, wr.width - rk);
-    stick.style.left = `${sx}px`; stick.style.top = `${cy}px`;
-    kickBtn.style.left = `${kx}px`; kickBtn.style.top = `${cy}px`;
+    stick.style.left = `${sx}px`; stick.style.top = `${cy}px`; stick.style.marginTop = "0";
+    kickBtn.style.left = `${kx}px`; kickBtn.style.top = `${cy}px`; kickBtn.style.marginTop = "0";
   }
   function stickRelease() { knob.style.transform = ""; stick.classList.remove("active"); setDir(0, 0); }
   wrap.addEventListener("pointerdown", e => {
