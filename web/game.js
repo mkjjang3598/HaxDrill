@@ -76,18 +76,11 @@
   let started = false, paused = true;
   const overlay = el("overlay");
   function openSettings() { paused = true; overlay.classList.remove("hidden"); el("start").textContent = started ? "New match" : "Play"; }
-  async function goFullscreenLandscape() {
-    // phones: fill the screen and ask for landscape (Android Chrome honours it; iOS ignores, we show the rotate hint)
-    if (!isTouchDevice()) return;
-    try { if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch {}
-    try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock("landscape"); } catch {}
-    setTimeout(fitCanvas, 300); setTimeout(fitCanvas, 1000);
-  }
   el("start").onclick = async () => {
     try { await newMatch(); }
     catch (e) { alert(`Could not start: ${e.message}`); return; }
     started = true; paused = false; overlay.classList.add("hidden"); el("start").blur();
-    goFullscreenLandscape();
+    if (isTouchDevice()) { const h = el("touchhint"); h.classList.remove("fade"); setTimeout(() => h.classList.add("fade"), 3500); }
   };
   el("settings").onclick = openSettings;
 
@@ -96,14 +89,20 @@
   const cv = el("c");
   const ctx = cv.getContext("2d");
   const isTouchDevice = () => matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
+  let lastCss = 0;
   function fitCanvas() {
-    const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || Infinity, window.visualViewport ? window.visualViewport.width : Infinity);
-    const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    const avail = vh - (isTouchDevice() ? 44 : 140);
-    const cssW = Math.min(vw * (isTouchDevice() ? 1.0 : 0.96), 1500, Math.max(isTouchDevice() ? 300 : 900, avail * W / H), vw);
+    let cssW;
+    if (isTouchDevice()) {
+      cssW = cv.getBoundingClientRect().width || Math.min(window.innerWidth, (window.innerHeight - 44) * W / H);
+    } else {
+      const avail = window.innerHeight - 140;
+      cssW = Math.min(window.innerWidth * 0.96, 1500, Math.max(900, avail * W / H));
+      document.documentElement.style.setProperty("--w", `${Math.round(cssW)}px`);
+    }
+    if (Math.abs(cssW - lastCss) < 0.5) return;
+    lastCss = cssW;
     const scale = cssW / W, dpr = window.devicePixelRatio || 1;
     cv.width = Math.round(W * scale * dpr); cv.height = Math.round(H * scale * dpr);
-    document.documentElement.style.setProperty("--w", `${Math.round(cssW)}px`);
     ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
   }
   fitCanvas();
@@ -155,24 +154,24 @@
     if (e.code === "KeyR") resetEpisode(0);
   });
   addEventListener("keyup", e => { if (KEYMAP[e.code]) keys.delete(KEYMAP[e.code]); });
-  // ---- touch controls: left half = virtual joystick (8 directions), right half = kick (hold) ----
-  const touchLayer = el("touch"), stick = el("stick"), knob = el("knob"), kickBtn = el("kickbtn");
+  // ---- touch controls: left half = diamond D-pad (8 directions by sector), right half = kick (hold) ----
+  const touchLayer = el("touch"), dpad = el("dpad"), kickBtn = el("kickbtn");
+  const arrows = Object.fromEntries([...dpad.querySelectorAll(".arrow")].map(a => [a.dataset.d, a]));
   const isTouch = matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
   if (isTouch) touchLayer.hidden = false;
-  let stickId = null, kickId = null, stickOrigin = null;
-  const R_STICK = 55, DEAD = 12;
+  let padId = null, kickId = null;
   function setDir(dx, dy) {
     keys.delete("L"); keys.delete("R"); keys.delete("U"); keys.delete("D");
     if (dx < 0) keys.add("L"); if (dx > 0) keys.add("R"); if (dy < 0) keys.add("U"); if (dy > 0) keys.add("D");
+    for (const [d, a] of Object.entries(arrows)) a.classList.toggle("on", keys.has(d));
   }
-  function stickMove(x, y) {
-    let vx = x - stickOrigin[0], vy = y - stickOrigin[1];
+  function padFromPoint(clientX, clientY) {
+    // direction = sector of the vector from the D-pad centre to the finger (works for taps on arrows and for sliding)
+    const r = dpad.getBoundingClientRect();
+    const vx = clientX - (r.left + r.width / 2), vy = clientY - (r.top + r.height / 2);
     const L = Math.hypot(vx, vy);
-    if (L > R_STICK) { vx *= R_STICK / L; vy *= R_STICK / L; }
-    knob.style.left = `${35 + vx}px`; knob.style.top = `${35 + vy}px`;
-    if (L < DEAD) { setDir(0, 0); return; }
-    const a = Math.atan2(vy, vx);  // 8 sectors of 45deg
-    const sector = Math.round(a / (Math.PI / 4));
+    if (L < r.width * 0.08) { setDir(0, 0); return; }
+    const sector = Math.round(Math.atan2(vy, vx) / (Math.PI / 4));
     const dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
     const [dx, dy] = dirs[((sector % 8) + 8) % 8];
     setDir(dx, dy);
@@ -180,25 +179,18 @@
   touchLayer.addEventListener("pointerdown", e => {
     e.preventDefault();
     const rect = touchLayer.getBoundingClientRect();
-    const x = e.clientX - rect.left, y = e.clientY - rect.top;
-    if (x < rect.width / 2) {
-      if (stickId !== null) return;
-      stickId = e.pointerId; stickOrigin = [x, y];
-      stick.style.display = "block"; stick.style.left = `${x - 55}px`; stick.style.top = `${y - 55}px`;
-      knob.style.left = "35px"; knob.style.top = "35px";
+    if (e.clientX - rect.left < rect.width / 2) {
+      if (padId !== null) return;
+      padId = e.pointerId; padFromPoint(e.clientX, e.clientY);
     } else {
       if (kickId !== null) return;
       kickId = e.pointerId; keys.add("K"); kickBtn.classList.add("on");
     }
     try { touchLayer.setPointerCapture(e.pointerId); } catch {}
   });
-  touchLayer.addEventListener("pointermove", e => {
-    if (e.pointerId !== stickId) return;
-    const rect = touchLayer.getBoundingClientRect();
-    stickMove(e.clientX - rect.left, e.clientY - rect.top);
-  });
+  touchLayer.addEventListener("pointermove", e => { if (e.pointerId === padId) padFromPoint(e.clientX, e.clientY); });
   for (const ev of ["pointerup", "pointercancel"]) touchLayer.addEventListener(ev, e => {
-    if (e.pointerId === stickId) { stickId = null; stick.style.display = "none"; setDir(0, 0); }
+    if (e.pointerId === padId) { padId = null; setDir(0, 0); }
     if (e.pointerId === kickId) { kickId = null; keys.delete("K"); kickBtn.classList.remove("on"); }
   });
   const rotateHint = el("rotate");
@@ -287,6 +279,7 @@
   }
   let acc = 0, last = performance.now();
   function frame(now) {
+    fitCanvas();
     acc += Math.min(100, now - last); last = now;
     while (acc >= 1000 / 60) { tick(); acc -= 1000 / 60; }
     requestAnimationFrame(frame);
