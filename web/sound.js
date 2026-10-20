@@ -40,26 +40,15 @@
     noiseBurst(t, 0.035, 1800, 1.2, 0.35 * volume);
   }
 
-  // goal: crowd cheer only - three layers of filtered noise (low roar, mid voices, high "ahh") swelling then fading
+  // goal: the original crowd-like swell of filtered noise (the whistle tone that used to sit on top is removed)
   function goal() {
     if (!ensure() || muted) return;
     const t = ctx.currentTime;
-    const layers = [[350, 0.8, 0.22], [900, 0.9, 0.28], [2200, 1.2, 0.12]];  // [centre Hz, Q, peak gain]
-    for (const [freq, q, peak] of layers) {
-      const src = ctx.createBufferSource(); src.buffer = noise; src.loop = true;
-      src.playbackRate.value = 0.9 + Math.random() * 0.2;
-      const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = freq; f.Q.value = q;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(peak, t + 0.35);
-      g.gain.setValueAtTime(peak, t + 0.9);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
-      // slow wobble so it sounds like many voices, not static
-      const lfo = ctx.createOscillator(), lg = ctx.createGain();
-      lfo.frequency.value = 3 + Math.random() * 3; lg.gain.value = peak * 0.25;
-      lfo.connect(lg); lg.connect(g.gain); lfo.start(t); lfo.stop(t + 2.5);
-      src.connect(f); f.connect(g); g.connect(master); src.start(t); src.stop(t + 2.5);
-    }
+    const src = ctx.createBufferSource(); src.buffer = noise; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 900; f.Q.value = 0.6;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.25); g.gain.exponentialRampToValueAtTime(0.001, t + 1.6);
+    src.connect(f); f.connect(g); g.connect(master); src.start(t); src.stop(t + 1.7);
   }
 
   function unlock() { if (ensure() && ctx.state === "suspended") ctx.resume(); }

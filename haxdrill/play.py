@@ -162,14 +162,10 @@ def make_sounds():
         thump = np.sin(2 * np.pi * np.cumsum(f) / sr) * np.exp(-t / 0.025) * 0.9
         click = np.random.default_rng(0).uniform(-1, 1, len(t)) * np.exp(-t / 0.006) * 0.3
         kick = np.clip(thump + click, -1, 1)
-        t2 = np.arange(int(2.4 * sr)) / sr
-        env = np.minimum(t2 / 0.35, 1) * np.where(t2 < 0.9, 1.0, np.exp(-(t2 - 0.9) / 0.45))
-        rng = np.random.default_rng(1)
-        crowd = np.zeros_like(t2)
-        for width, gain in ((40, 0.9), (12, 1.0), (4, 0.4)):  # low roar, mid voices, high "ahh" (crude band split)
-            crowd += np.convolve(rng.uniform(-1, 1, len(t2)), np.ones(width) / width, "same") * gain
-        wobble = 1 + 0.25 * np.sin(2 * np.pi * 4 * t2)
-        goal = np.clip(crowd * env * wobble * 0.9, -1, 1)  # cheer only, no whistle
+        t2 = np.arange(int(1.6 * sr)) / sr
+        env = np.minimum(t2 / 0.25, 1) * np.exp(-np.maximum(t2 - 0.25, 0) / 0.4)
+        crowd = np.convolve(np.random.default_rng(1).uniform(-1, 1, len(t2)), np.ones(12) / 12, "same") * env * 1.2
+        goal = np.clip(crowd, -1, 1)  # original crowd swell, no whistle tone
         mk = lambda x: pygame.sndarray.make_sound((x * 32767 * 0.6).astype(np.int16))
         return mk(kick), mk(goal)
     except Exception:  # no audio device (headless, SSH): play silently
