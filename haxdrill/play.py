@@ -152,6 +152,27 @@ def draw(screen, font, big, s, score, label, ticks, kicking=False, ghost=None, m
         surf.blit(t2, (D.W // 2 - t2.get_width() // 2, D.H // 2 - 70))
 
 
+def make_sounds():
+    """Synthesised kick/goal sounds for pygame (same recipe as web/sound.js). Returns (kick, goal) or (None, None)."""
+    try:
+        sr = 44100
+        pygame.mixer.init(sr, -16, 1, 512)
+        t = np.arange(int(0.13 * sr)) / sr
+        f = 70 + (190 - 70) * np.exp(-t / 0.03)
+        thump = np.sin(2 * np.pi * np.cumsum(f) / sr) * np.exp(-t / 0.025) * 0.9
+        click = np.random.default_rng(0).uniform(-1, 1, len(t)) * np.exp(-t / 0.006) * 0.3
+        kick = np.clip(thump + click, -1, 1)
+        t2 = np.arange(int(1.6 * sr)) / sr
+        env = np.minimum(t2 / 0.25, 1) * np.exp(-np.maximum(t2 - 0.25, 0) / 0.4)
+        crowd = np.convolve(np.random.default_rng(1).uniform(-1, 1, len(t2)), np.ones(12) / 12, "same") * env * 1.2
+        tone = np.sin(2 * np.pi * (880 + 440 * np.minimum(t2 / 0.18, 1)) * t2) * np.exp(-t2 / 0.12) * 0.15
+        goal = np.clip(crowd + tone, -1, 1)
+        mk = lambda x: pygame.sndarray.make_sound((x * 32767 * 0.6).astype(np.int16))
+        return mk(kick), mk(goal)
+    except Exception:  # no audio device (headless, SSH): play silently
+        return None, None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["sim", "model"], default="sim")
@@ -167,6 +188,7 @@ def main():
     ap.add_argument("--n", type=int, default=1, help="players per team (n>1 requires --policy)")
     ap.add_argument("--deterministic", action="store_true", help="RL policy takes argmax actions")
     ap.add_argument("--name", default="player", help="your nickname shown under your disc")
+    ap.add_argument("--mute", action="store_true", help="no sound (toggle in game with M)")
     ap.add_argument("--jersey", default="7", help="your jersey number/letters (max 2 chars)")
     ap.add_argument("--score-limit", type=int, default=3, help="goals to win a match (0 = unlimited)")
     ap.add_argument("--time-limit", type=float, default=3.0, help="match length in minutes (0 = unlimited); tied at full time -> golden-goal overtime")
@@ -191,6 +213,8 @@ def main():
         args.record = time.strftime("data/play/%Y%m%d_%H%M%S") + f"_{n}v{n}.npz"
 
     pygame.init()
+    snd_kick, snd_goal = make_sounds()
+    muted = args.mute
     screen = pygame.display.set_mode((D.W, D.H + D.BAR))
     pygame.display.set_caption(f"HaxDrill - {C.STADIUM_NAME}")
     font = pygame.font.SysFont(None, 26)
@@ -236,6 +260,8 @@ def main():
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
                 running = False
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_m:
+                muted = not muted
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_r:
                 sim.reset(kickoff_team=None if args.mode == "model" else 0)
                 if ctrl is not None:
@@ -257,6 +283,8 @@ def main():
                 else:
                     all_actions = [a_red, opp.act(s, sim.players[1].kick_armed)]
                 sim.step(all_actions)
+                if not muted and snd_kick is not None and any(p.kicked for p in sim.players):
+                    snd_kick.play()
                 if sim.players[0].kicked:
                     latch.fired()
                 state = sim.get_state()
@@ -288,6 +316,8 @@ def main():
                 match_ticks += 1
             if args.mode == "sim":
                 goal = sim.step(all_actions)
+                if not muted and snd_kick is not None and any(p.kicked for p in sim.players):
+                    snd_kick.play()
                 if args.record:
                     rec_obs.append(s.copy()), rec_act.append(a_red), rec_ep.append(ep_id), rec_goal.append(-1 if goal is None else goal)
                 if sim.players[0].kicked:
@@ -306,8 +336,12 @@ def main():
                 goal = goal_from_state(state)
                 if args.ghost:
                     sim.step(all_actions)
+                    if not muted and snd_kick is not None and any(p.kicked for p in sim.players):
+                        snd_kick.play()
             if goal is not None:
                 score[goal] += 1
+                if not muted and snd_goal is not None:
+                    snd_goal.play()
                 next_kickoff = 1 - goal
                 msg = "Red Scores!" if goal == 0 else "Blue Scores!"
                 pause = 90

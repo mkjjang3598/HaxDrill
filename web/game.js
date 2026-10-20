@@ -3,7 +3,9 @@
 (async function () {
   "use strict";
   const qs = new URLSearchParams(location.search);
-  const LOG_URL = window.HAXDRILL_LOG_URL || qs.get("log") || "/log";
+  const LOG_BASE = qs.get("log") || window.HAXDRILL_LOG_URL || "";
+  const LOG_URL = LOG_BASE ? LOG_BASE.replace(/\/+$/, "").replace(/\/log$/, "") + "/log" : (location.protocol.startsWith("http") && !location.hostname.endsWith("github.io") ? "/log" : "");
+  const LOG_HEADERS = { "Content-Type": "application/json", "ngrok-skip-browser-warning": "1" };
   const el = id => document.getElementById(id);
   const isTouchDevice = () => (window.matchMedia && matchMedia("(pointer: coarse)").matches) || navigator.maxTouchPoints > 0;
   window.addEventListener("error", e => { try { el("label").textContent = "error: " + (e.message || e.error); } catch (_) {} });
@@ -86,6 +88,7 @@
     try { await newMatch(); }
     catch (e) { alert(`Could not start: ${e.message}`); return; }
     started = true; paused = false; overlay.classList.add("hidden"); el("start").blur();
+    if (window.HaxSound) HaxSound.unlock();
     if (isTouchDevice()) {
       touchHintUntil = performance.now() + 4000;  // shown in the top bar, never over the pitch
       // maximise: go fullscreen (hides the browser chrome). No orientation lock - rotating keeps working.
@@ -93,6 +96,10 @@
     }
   };
   el("settings").onclick = openSettings;
+  const muteBtn = el("mute");
+  const syncMute = () => { muteBtn.textContent = window.HaxSound && HaxSound.isMuted() ? "🔇" : "🔊"; };
+  muteBtn.onclick = () => { if (!window.HaxSound) return; HaxSound.setMuted(!HaxSound.isMuted()); HaxSound.unlock(); syncMute(); muteBtn.blur(); };
+  syncMute();
 
   // ---------------- drawing (mirrors haxdrill/draw.py) ----------------
   const MARGIN = 30, W = 2 * cfg.half_w + 2 * MARGIN, H = 2 * cfg.half_h + 2 * MARGIN;
@@ -169,6 +176,7 @@
     if (typing() || paused) return;
     if (KEYMAP[e.code]) { keys.add(KEYMAP[e.code]); e.preventDefault(); }
     if (e.code === "KeyR") resetEpisode(0);
+    if (e.code === "KeyM") muteBtn.onclick();
   });
   addEventListener("keyup", e => { if (KEYMAP[e.code]) keys.delete(KEYMAP[e.code]); });
   // ---- touch controls: fixed round joystick left of the pitch + KICK right of it. Any touch on the
@@ -259,8 +267,9 @@
     const payload = payloadOf(log);
     log = { obs: [], act: [], ep: [], goal: [] };
     pending.push(payload);
+    if (!LOG_URL) { logstat.textContent = ""; return; }
     try {
-      const r = await fetch(LOG_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const r = await fetch(LOG_URL, { method: "POST", headers: LOG_HEADERS, body: JSON.stringify(payload) });
       if (r.ok) { sent += payload.act.length; pending.splice(pending.indexOf(payload), 1); logstat.textContent = `log uploaded: ${Math.round(sent / 60)}s`; }
       else logstat.textContent = `log kept locally (${pending.length})`;
     } catch { logstat.textContent = `log kept locally (${pending.length})`; }
@@ -273,6 +282,10 @@
 
   // ---------------- game loop ----------------
   function resetEpisode(kickoff = nextKickoff) { if (!sim) return; sim.reset(kickoff); epId++; lastActs = null; nextKickoff = 0; }
+  function playKickSounds() {
+    if (!window.HaxSound) return;
+    for (let p = 0; p < P; p++) if (sim.kicked[p]) HaxSound.kick(p === 0 ? 1 : 0.7);
+  }
   function endMatch(w) { el("goal").textContent = `${w === 0 ? "Red" : "Blue"} Wins!  ${score[0]} - ${score[1]}`; matchOver = true; pause = 180; }
   function tick() {
     if (!sim || paused) { if (sim) draw(false); return; }
@@ -290,6 +303,7 @@
       // celebration: physics keeps running (ball flies into the net, players keep moving), no new goals
       pause--;
       sim.step(acts);
+      playKickSounds();
       if (sim.kicked[0]) kickArmedLatch = false;
       if (pause === 0) {
         el("goal").textContent = "";
@@ -301,9 +315,11 @@
     const inKickoff = sim.kickoffTeam >= 0;
     const g = sim.step(acts);
     log.obs.push(...state.map(v => Math.round(v * 1000) / 1000)); log.act.push(aHuman); log.ep.push(epId); log.goal.push(g);
+    playKickSounds();
     if (sim.kicked[0]) kickArmedLatch = false;
     if (!inKickoff) ticks++;  // the match clock waits for the kick-off
     if (g >= 0) {
+      if (window.HaxSound) HaxSound.goal();
       score[g]++; el("sr").textContent = score[0]; el("sb").textContent = score[1];
       el("goal").textContent = g === 0 ? "Red Scores!" : "Blue Scores!";
       nextKickoff = 1 - g;  // the conceding team kicks off
@@ -328,7 +344,7 @@
     while (acc >= 1000 / 60) { tick(); acc -= 1000 / 60; }
     requestAnimationFrame(frame);
   }
-  addEventListener("beforeunload", () => { if (log.act.length) { try { navigator.sendBeacon(LOG_URL, new Blob([JSON.stringify(payloadOf(log))], { type: "application/json" })); } catch {} } });
+  addEventListener("pagehide", () => { if (LOG_URL && log.act.length) { try { fetch(LOG_URL, { method: "POST", headers: LOG_HEADERS, body: JSON.stringify(payloadOf(log)), keepalive: true }); } catch (_) {} } });
   // level availability: grey out medium if its policy file is missing
   for (const lvl of ["medium", "hard", "expert"]) {
     const b = document.querySelector(`#levelseg [data-level="${lvl}"]`);

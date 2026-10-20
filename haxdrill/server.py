@@ -20,10 +20,14 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import numpy as np
 
-MAX_BODY = 50 * 1024 * 1024
+MAX_BODY = 8 * 1024 * 1024  # a 3-minute match is ~1 MB of JSON
+RATE_PER_MIN = 30  # POSTs per client IP per minute
 
 
-def make_handler(web_dir: str, out_dir: str):
+def make_handler(web_dir: str, out_dir: str, log_only: bool = False):
+    import collections
+    hits = collections.defaultdict(collections.deque)
+
     class H(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=web_dir, **kw)
@@ -35,7 +39,8 @@ def make_handler(web_dir: str, out_dir: str):
         def _cors(self):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, ngrok-skip-browser-warning")
+            self.send_header("Access-Control-Max-Age", "86400")
 
         def end_headers(self):
             self._cors()
@@ -54,6 +59,10 @@ def make_handler(web_dir: str, out_dir: str):
             self.wfile.write(body)
 
         def do_GET(self):
+            if self.path.split("?")[0] == "/health":
+                return self._json(200, {"ok": True})
+            if log_only and self.path.split("?")[0] != "/stats":
+                return self._json(404, {"error": "log-only server"})
             if self.path.split("?")[0] == "/stats":
                 files = [f for f in os.listdir(out_dir) if f.endswith(".npz")]
                 ticks = 0
@@ -68,6 +77,13 @@ def make_handler(web_dir: str, out_dir: str):
         def do_POST(self):
             if self.path.split("?")[0] != "/log":
                 return self._json(404, {"error": "not found"})
+            ip = self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip()
+            now = time.time(); q = hits[ip]
+            while q and now - q[0] > 60:
+                q.popleft()
+            if len(q) >= RATE_PER_MIN:
+                return self._json(429, {"error": "slow down"})
+            q.append(now)
             n = int(self.headers.get("Content-Length", "0"))
             if n <= 0 or n > MAX_BODY:
                 return self._json(413, {"error": "bad length"})
@@ -99,10 +115,12 @@ def main():
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--web", default="web")
     ap.add_argument("--out", default="data/web")
+    ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--log-only", action="store_true", help="only /log, /stats, /health (use this behind a public tunnel)")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
-    srv = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(os.path.abspath(args.web), os.path.abspath(args.out)))
-    print(f"serving {args.web} on http://localhost:{args.port}  (logs -> {args.out})")
+    srv = ThreadingHTTPServer((args.host, args.port), make_handler(os.path.abspath(args.web), os.path.abspath(args.out), args.log_only))
+    print(f"{'log-only' if args.log_only else 'serving ' + args.web} on http://{args.host}:{args.port}  (logs -> {args.out})", flush=True)
     srv.serve_forever()
 
 
