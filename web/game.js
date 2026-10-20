@@ -316,7 +316,7 @@
     const s = Math.floor(ticks / 60), tl = timeLimitTicks() / 60;
     const fmt = v => `${String(Math.floor(v / 60)).padStart(2, "0")}:${String(Math.floor(v % 60)).padStart(2, "0")}`;
     el("time").textContent = overtime ? `${fmt(s)}  OVERTIME` : tl ? `${fmt(s)} / ${fmt(tl)}` : fmt(s);
-    const lvl = pol._file && pol._file.includes("_hard.") ? "hard" : pol._file && pol._file.includes("_medium.") ? "medium" : "easy";
+    const lvl = (pol._file && (pol._file.match(/_(medium|hard|expert)\./) || [])[1]) || "easy";
     const base = `${n}v${n} · ${names[0]} vs bot [${lvl}]`;
     el("label").textContent = performance.now() < touchHintUntil ? "stick: move · KICK: hold" : (sim.kickoffTeam >= 0 ? `${sim.kickoffTeam === 0 ? "Red" : "Blue"} kick-off · ${base}` : base);
     draw(kicking);
@@ -330,7 +330,7 @@
   }
   addEventListener("beforeunload", () => { if (log.act.length) { try { navigator.sendBeacon(LOG_URL, new Blob([JSON.stringify(payloadOf(log))], { type: "application/json" })); } catch {} } });
   // level availability: grey out medium if its policy file is missing
-  for (const lvl of ["medium", "hard"]) {
+  for (const lvl of ["medium", "hard", "expert"]) {
     const b = document.querySelector(`#levelseg [data-level="${lvl}"]`);
     if (FILES[`policy_n1_${lvl}.json`]) { b.disabled = false; b.title = ""; const small = b.querySelector("small"); if (small) small.remove(); }
     else { b.disabled = true; b.title = `${lvl} bot not available yet`; if (el("level").value === lvl) { el("level").value = "easy"; wireSeg("levelseg", "level", "level"); } }

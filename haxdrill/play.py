@@ -163,7 +163,7 @@ def main():
     ap.add_argument("--max-frames", type=int, default=0, help="auto-quit after N frames (for testing)")
     ap.add_argument("--opponent", choices=["scripted", "rl"], default=None, help="blue controller in sim mode (default: rl if --policy given else scripted)")
     ap.add_argument("--policy", default=None, help="PPO checkpoint for RL opponents/teammates (runs/ppo_n1.pt)")
-    ap.add_argument("--level", choices=["easy", "medium", "hard"], default=None, help="shortcut: easy = runs/ppo_n{n}.pt, medium = runs/medium.pt, hard = runs/league/main_latest.pt")
+    ap.add_argument("--level", choices=["easy", "medium", "hard", "expert"], default=None, help="shortcut: easy/medium/hard = runs/levels/<level>.pt, expert = runs/league/main_latest.pt (still training)")
     ap.add_argument("--n", type=int, default=1, help="players per team (n>1 requires --policy)")
     ap.add_argument("--deterministic", action="store_true", help="RL policy takes argmax actions")
     ap.add_argument("--name", default="player", help="your nickname shown under your disc")
@@ -175,7 +175,7 @@ def main():
     C.handle_stadium_arg(args)
     n = args.n
     if args.level and not args.policy:
-        args.policy = {"easy": f"runs/ppo_n{n}.pt", "medium": "runs/medium.pt", "hard": "runs/league/main_latest.pt"}[args.level]
+        args.policy = "runs/league/main_latest.pt" if args.level == "expert" else (f"runs/levels/{args.level}.pt" if n == 1 else f"runs/ppo_n{n}.pt")
     if args.opponent is None:
         args.opponent = "rl" if args.policy else "scripted"
     if (n > 1 or args.opponent == "rl") and not args.policy:

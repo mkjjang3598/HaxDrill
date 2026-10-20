@@ -85,9 +85,10 @@
       <div class="seg" id="levelseg">
         <button type="button" data-level="easy" class="on">easy</button>
         <button type="button" data-level="medium">medium</button>
-        <button type="button" data-level="hard" disabled title="still training">hard <small>soon</small></button>
+        <button type="button" data-level="hard">hard</button>
+        <button type="button" data-level="expert" disabled title="still training">expert <small>soon</small></button>
       </div>
-      <select id="level" hidden><option value="easy">easy</option><option value="medium">medium</option><option value="hard">hard</option></select>
+      <select id="level" hidden><option value="easy">easy</option><option value="medium">medium</option><option value="hard">hard</option><option value="expert">expert</option></select>
     </div>
     <select id="players" hidden><option value="1" selected>1 vs 1</option></select>
     <div class="row"><label>Goals to win <input type="number" id="goals" min="0" max="20" value="3"></label>
@@ -109,11 +110,12 @@
   <span style="opacity:.7">Logs contain player/ball positions, key presses, your nickname and an anonymous id. They are used to train the bots.</span>
 </div>
 
-<script src="physics.js?v=20261020121556"></script>
-<script src="config.js?v=20261020121556"></script>
-<script src="policy_n1.js?v=20261020121556"></script>
-<script src="policy_n1_medium.js?v=20261020121556" onerror="this.remove()"></script>
-<script src="policy_n1_hard.js?v=20261020121556" onerror="this.remove()"></script>
-<script src="game.js?v=20261020121556"></script>
+<script src="physics.js?v=20261020132733"></script>
+<script src="config.js?v=20261020132733"></script>
+<script src="policy_n1.js?v=20261020132733"></script>
+<script src="policy_n1_medium.js?v=20261020132733" onerror="this.remove()"></script>
+<script src="policy_n1_hard.js?v=20261020132733" onerror="this.remove()"></script>
+<script src="policy_n1_expert.js?v=20261020132733" onerror="this.remove()"></script>
+<script src="game.js?v=20261020132733"></script>
 </body>
 </html>
