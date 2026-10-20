@@ -36,7 +36,8 @@ def goals_in_file(path: str):
                 elif bx < -C.GOAL_X + 12 and bvx < 0:
                     blue += 1
     name = str(d["name"]) if "name" in d.files else ""
-    return n, len(obs), red, blue, int(ep.max() - ep.min()) + 1, name
+    policy = str(d["policy"]) if "policy" in d.files else "?"
+    return n, len(obs), red, blue, int(ep.max() - ep.min()) + 1, name, policy
 
 
 def main():
@@ -45,17 +46,18 @@ def main():
     if not files:
         print("no logs found")
         return
-    agg = defaultdict(lambda: [0, 0, 0, 0])  # n -> ticks, red(human) goals, blue(bot) goals, episodes
-    print(f"{'file':52s} {'mode':5s} {'min':>5s} {'you':>4s} {'bot':>4s}")
+    agg = defaultdict(lambda: [0, 0, 0, 0])  # (n, bot) -> ticks, red(human) goals, blue(bot) goals, episodes
+    print(f"{'file':52s} {'mode':5s} {'min':>5s} {'you':>4s} {'bot':>4s}  bot")
     for f in files:
-        n, ticks, r, b, eps, name = goals_in_file(f)
-        a = agg[n]
+        n, ticks, r, b, eps, name, policy = goals_in_file(f)
+        bot = policy.split("/")[-1].replace(".pt", "").replace(".json", "")
+        a = agg[(n, bot)]
         a[0] += ticks; a[1] += r; a[2] += b; a[3] += eps
-        print(f"{f[-52:]:52s} {n}v{n}   {ticks/3600:5.1f} {r:4d} {b:4d}  {name}")
+        print(f"{f[-52:]:52s} {n}v{n}   {ticks/3600:5.1f} {r:4d} {b:4d}  {bot}  {name}")
     print()
-    for n, (ticks, r, b, eps) in sorted(agg.items()):
+    for (n, bot), (ticks, r, b, eps) in sorted(agg.items()):
         mins = ticks / 3600
-        print(f"{n}v{n}: {mins:.1f} min, {eps} episodes | you {r} - {b} bot | you {r/max(mins,1e-9):.2f}/min, bot {b/max(mins,1e-9):.2f}/min")
+        print(f"{n}v{n} vs {bot:18s}: {mins:5.1f} min, {eps:3d} episodes | you {r} - {b} bot | you {r/max(mins,1e-9):.2f}/min, bot {b/max(mins,1e-9):.2f}/min")
 
 
 if __name__ == "__main__":

@@ -74,7 +74,8 @@ uv pip install -p .venv/bin/python --reinstall torch --index-url https://downloa
 ## 난이도와 리그 학습 (medium 봇)
 
 - **easy** = `runs/ppo_n{n}.pt` / `web/policy_n{n}.json` (단순 self-play 봇).
-- **medium** = 리그 학습 결과 `runs/league/main_latest.pt` / `web/policy_n1_medium.json`. 웹 상단 "난이도", pygame `--level medium`.
+- **medium** = 리그 12.5시간(cycle 275) 시점을 고정한 `runs/medium.pt` / `web/policy_n1_medium.js`. pygame `--level medium`.
+- **hard** = 그 뒤로 exploiter를 더 많이(20개, 가중치 2배, 120 iter, 30%는 무작위 초기화)·더 세게 섞어 하루 더 돌린 리그의 `runs/league/main_latest.pt` → `web/policy_n1_hard.js`. 파일이 있으면 웹 "hard" 버튼이 자동으로 켜진다. pygame `--level hard`.
 
 ```bash
 nohup .venv/bin/python -m haxdrill.league --n 1 --hours 24 --out-dir runs/league > runs/league.out 2>&1 &

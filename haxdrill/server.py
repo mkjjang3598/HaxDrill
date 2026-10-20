@@ -82,10 +82,11 @@ def make_handler(web_dir: str, out_dir: str):
                 assert np.isfinite(obs).all() and act.min() >= 0 and act.max() < 18
                 client = re.sub(r"[^A-Za-z0-9_-]", "", str(d.get("client", "anon")))[:32] or "anon"
                 nick = str(d.get("name", ""))[:16]
+                policy = re.sub(r"[^A-Za-z0-9_.-]", "", str(d.get("policy", "")))[:64]
                 goal = np.asarray(d.get("goal", [-1] * len(act)), np.int8)
                 assert len(goal) == len(act)
                 name = f"log_{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}_{int(time.time()*1000)%1000:03d}_{client}.npz"
-                np.savez_compressed(os.path.join(out_dir, name), obs=obs, act=act, ep=ep, kicked=np.zeros(len(obs), bool), goal=goal, n_red=nr, n_blue=nb, stadium=str(d.get("stadium", "")), client=client, name=nick)
+                np.savez_compressed(os.path.join(out_dir, name), obs=obs, act=act, ep=ep, kicked=np.zeros(len(obs), bool), goal=goal, n_red=nr, n_blue=nb, stadium=str(d.get("stadium", "")), client=client, name=nick, policy=policy)
                 return self._json(200, {"ok": True, "ticks": int(len(obs)), "file": name})
             except Exception as e:  # noqa: BLE001
                 return self._json(400, {"error": str(e)[:200]})

@@ -163,7 +163,7 @@ def main():
     ap.add_argument("--max-frames", type=int, default=0, help="auto-quit after N frames (for testing)")
     ap.add_argument("--opponent", choices=["scripted", "rl"], default=None, help="blue controller in sim mode (default: rl if --policy given else scripted)")
     ap.add_argument("--policy", default=None, help="PPO checkpoint for RL opponents/teammates (runs/ppo_n1.pt)")
-    ap.add_argument("--level", choices=["easy", "medium"], default=None, help="shortcut: easy = runs/ppo_n{n}.pt, medium = runs/league/main_latest.pt")
+    ap.add_argument("--level", choices=["easy", "medium", "hard"], default=None, help="shortcut: easy = runs/ppo_n{n}.pt, medium = runs/medium.pt, hard = runs/league/main_latest.pt")
     ap.add_argument("--n", type=int, default=1, help="players per team (n>1 requires --policy)")
     ap.add_argument("--deterministic", action="store_true", help="RL policy takes argmax actions")
     ap.add_argument("--name", default="player", help="your nickname shown under your disc")
@@ -175,7 +175,7 @@ def main():
     C.handle_stadium_arg(args)
     n = args.n
     if args.level and not args.policy:
-        args.policy = f"runs/ppo_n{n}.pt" if args.level == "easy" else "runs/league/main_latest.pt"
+        args.policy = {"easy": f"runs/ppo_n{n}.pt", "medium": "runs/medium.pt", "hard": "runs/league/main_latest.pt"}[args.level]
     if args.opponent is None:
         args.opponent = "rl" if args.policy else "scripted"
     if (n > 1 or args.opponent == "rl") and not args.policy:
@@ -336,7 +336,7 @@ def main():
             running = False
     pygame.quit()
     if args.record and rec_obs:
-        np.savez_compressed(args.record, obs=np.array(rec_obs, np.float32), act=np.array(rec_act, np.int8), ep=np.array(rec_ep, np.int32), kicked=np.zeros(len(rec_obs), bool), goal=np.array(rec_goal, np.int8), n_red=n, n_blue=n, stadium=C.STADIUM_NAME, name=args.name)
+        np.savez_compressed(args.record, obs=np.array(rec_obs, np.float32), act=np.array(rec_act, np.int8), ep=np.array(rec_ep, np.int32), kicked=np.zeros(len(rec_obs), bool), goal=np.array(rec_goal, np.int8), n_red=n, n_blue=n, stadium=C.STADIUM_NAME, name=args.name, policy=str(args.policy or "scripted"))
         print(f"saved {args.record}: {len(rec_obs)} ticks")
 
 

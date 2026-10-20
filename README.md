@@ -25,7 +25,9 @@ Bots see an ego-centric, mirrored observation so one network plays both sides an
 uv venv .venv && uv pip install -p .venv/bin/python -e .
 .venv/bin/python -m haxdrill.play --level easy                      # play vs the bot (arrows/WASD, X kick)
 .venv/bin/python -m haxdrill.rl --n 1 --iters 1500                  # train a 1v1 bot (~20 min on one GPU)
-.venv/bin/python -m haxdrill.league --n 1 --hours 24                # league training (the "medium" bot)
+.venv/bin/python -m haxdrill.league --n 1 --hours 24                # league training (medium/hard bots)
+.venv/bin/python -m haxdrill.league --n 1 --resume-dir runs/league --hours 24 --export web/policy_n1_hard.json \
+    --max-exploiters 20 --exploiter-weight 2 --exploiter-iters 120 --exploiter-fresh 0.3   # continue with stronger exploiters
 .venv/bin/python -m haxdrill.export runs/ppo_n1.pt web/policy_n1.json   # -> also writes policy_n1.js for the web build
 .venv/bin/python -m haxdrill.server --port 8000                     # serve web/ and collect play logs
 ```

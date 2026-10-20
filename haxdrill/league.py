@@ -423,6 +423,8 @@ def main():
     ap.add_argument("--snapshot-every", type=int, default=25)
     ap.add_argument("--pool-size", type=int, default=20)
     ap.add_argument("--max-exploiters", type=int, default=8)
+    ap.add_argument("--exploiter-weight", type=float, default=1.0, help="sampling weight of each exploiter relative to the newest snapshot")
+    ap.add_argument("--exploiter-fresh", type=float, default=0.0, help="probability that an exploiter starts from random weights instead of a copy of main (more diverse attacks)")
     ap.add_argument("--human", nargs="*", default=["data/play/*.npz", "data/web/*.npz"], help="human logs: imitation loss for main (+ a BC policy in the pool)")
     ap.add_argument("--human-coef", type=float, default=0.01)
     ap.add_argument("--hours", type=float, default=24.0)
@@ -473,7 +475,7 @@ def main():
 
     def main_opponents():
         sd = list(snapshots) + list(exploiters) + ([human_bc] if human_bc is not None else [])
-        w = list(np.arange(1, len(snapshots) + 1, dtype=float)) + [float(len(snapshots))] * len(exploiters) + ([0.5 * len(snapshots)] if human_bc is not None else [])
+        w = list(np.arange(1, len(snapshots) + 1, dtype=float)) + [a.exploiter_weight * len(snapshots)] * len(exploiters) + ([0.5 * len(snapshots)] if human_bc is not None else [])
         return sd, w
 
     t0 = time.time()
@@ -503,7 +505,10 @@ def main():
         say(f"cycle {state['cycle']} main: iters {state['main_iters']} shaping x{scale:.2f} pg {st['pg']:+.4f} v {st['vl']:.4f} ent {st['ent']:.3f} | vs pool {r_red:.2f}-{r_blue:.2f} goals/min | pool {len(snapshots)} snaps + {len(exploiters)} exploiters")
         # ---- 2. exploiter vs frozen main ----
         frozen = copy.deepcopy(main_tr.policy.state_dict())
-        expl_tr.policy.load_state_dict(frozen)  # start from main (knows how to play), then specialise
+        if np.random.default_rng().random() < a.exploiter_fresh:
+            expl_tr.policy = Policy(main_tr.od, a.hidden).to(dev)  # fresh exploiter: finds different kinds of holes
+        else:
+            expl_tr.policy.load_state_dict(frozen)  # start from main (knows how to play), then specialise
         expl_tr.opt = torch.optim.Adam(expl_tr.policy.parameters(), lr=a.lr, eps=1e-5)
         expl_tr.set_opponents([frozen], [1.0])
         expl_tr.pop_goal_rate(1)
