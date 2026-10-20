@@ -145,6 +145,11 @@ class PolicyController:
         self.version = ck["obs_version"]
         self.K = ck.get("stack", 1)
         self.hist = None
+        hc = ck.get("handicap") or {}
+        self.temp, self.kick_keep = float(hc.get("temperature", 1.0)), float(hc.get("kick_keep", 1.0))
+        if "repeat" in hc and repeat is None:
+            self.repeat = int(hc["repeat"])
+        self._rng = np.random.default_rng()
         self.n_red, self.n_blue = n_red, n_blue
         self.repeat = repeat or ck.get("repeat", 2)
         self.deterministic = deterministic
@@ -169,8 +174,16 @@ class PolicyController:
                 self.hist = np.roll(self.hist, 1, 1)
                 self.hist[:, 0] = obs
             obs = self.hist.reshape(obs.shape[0], -1)
-        a, _, _ = self.policy.act(torch.as_tensor(obs, device=self.device), self.deterministic)
-        a = a.cpu().numpy()
+        if self.temp != 1.0 and not self.deterministic:
+            with torch.no_grad():
+                logits, _ = self.policy(torch.as_tensor(obs, device=self.device))
+            a = torch.distributions.Categorical(logits=logits / self.temp).sample()
+        else:
+            a, _, _ = self.policy.act(torch.as_tensor(obs, device=self.device), self.deterministic)
+        a = a.cpu().numpy().copy()
+        if self.kick_keep < 1.0:
+            drop = (a >= 9) & (self._rng.random(a.shape) > self.kick_keep)
+            a[drop] -= 9
         out = {}
         for p in range(self.n_red + self.n_blue):
             out[p] = int(a[p]) if p < self.n_red else int(mirror_action(a[p : p + 1])[0])

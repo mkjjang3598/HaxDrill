@@ -24,7 +24,9 @@ def export_policy(ckpt: str, out: str):
     pol, ck = load_policy(ckpt, "cpu")
     f = lambda t: t.detach().cpu().numpy().round(6).tolist()
     l1, _, l2, _ = pol.trunk
-    d = dict(kind="policy", obs_dim=pol.obs_dim, obs_version=ck.get("obs_version", 1), stack=ck.get("stack", 1), n=ck.get("n", 1), repeat=ck.get("repeat", 2), stadium=ck.get("stadium", ""),
+    hc = ck.get("handicap") or {}
+    d = dict(kind="policy", obs_dim=pol.obs_dim, obs_version=ck.get("obs_version", 1), stack=ck.get("stack", 1), n=ck.get("n", 1),
+             repeat=int(hc.get("repeat", ck.get("repeat", 2))), temperature=float(hc.get("temperature", 1.0)), kick_keep=float(hc.get("kick_keep", 1.0)), stadium=ck.get("stadium", ""),
              w1=f(l1.weight), b1=f(l1.bias), w2=f(l2.weight), b2=f(l2.bias), w_pi=f(pol.pi.weight), b_pi=f(pol.pi.bias))
     with open(out, "w") as fh:
         json.dump(d, fh)

@@ -241,7 +241,11 @@
       sim._hist[p] = h;
       obs = [].concat(...h);
     }
-    const a = sampleLogits(policyLogits(pol, obs), deterministic);
+    let logits = policyLogits(pol, obs);
+    const temp = pol.temperature || 1;
+    if (temp !== 1) logits = logits.map(v => v / temp);
+    let a = sampleLogits(logits, deterministic);
+    if (a >= 9 && pol.kick_keep !== undefined && pol.kick_keep < 1 && Math.random() > pol.kick_keep) a -= 9;  // easy bot misses kicks
     return p < sim.nRed ? a : mirrorAction(a);
   }
 
